@@ -1,0 +1,42 @@
+---
+- name: Mise à jour Oracle Linux 7
+  hosts: ol7
+  become: true
+  tasks:
+    - name: Mise à jour des paquets OL7 avec exclusions
+      yum:
+        name: "*"
+        state: latest
+        exclude: "{{ excluded_packages | join(',') }}"
+      notify: reboot
+
+- name: Mise à jour Oracle Linux 8
+  hosts: ol8
+  become: true
+  tasks:
+    - name: Mise à jour des paquets OL8 avec exclusions
+      dnf:
+        name: "*"
+        state: latest
+        exclude: "{{ excluded_packages | join(',') }}"
+      notify: reboot
+
+- name: Mise à jour Oracle Linux 9
+  hosts: ol9
+  become: true
+  tasks:
+    - name: Mise à jour des paquets OL9 avec exclusions
+      dnf:
+        name: "*"
+        state: latest
+        exclude: "{{ excluded_packages | join(',') }}"
+      notify: reboot
+
+handlers:
+  - name: reboot
+    reboot:
+      msg: "Redémarrage après mise à jour"
+      connect_timeout: 5
+      reboot_timeout: 600
+      pre_reboot_delay: 0
+      post_reboot_delay: 30

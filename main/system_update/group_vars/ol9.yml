@@ -1,0 +1,3 @@
+excluded_packages:
+  - "kernel*"
+  - "oracle-database*"

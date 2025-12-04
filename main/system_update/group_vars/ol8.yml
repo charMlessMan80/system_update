@@ -1,0 +1,5 @@
+excluded_packages:
+  - "kernel*"
+  - "oracle-database*"
+  - "oracleasm*"
+  - "oracleasm-support*"
