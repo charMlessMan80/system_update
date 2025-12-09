@@ -1,0 +1,45 @@
+# Général
+backup_dir: "/var/tmp/ansible_update_backup_{{ ansible_date_time.iso8601_basic_short }}"
+excluded_packages:
+  - kernel*
+  - oracle-database*
+  - oracle-instantclient*
+
+# LVM
+lvm_vg: "rootvg"
+lvm_lv: "root"
+lvm_snapshot_size: "10G"
+snapshot_prefix: "snap_{{ ansible_hostname }}_"
+snapshot_retention_days: 7  # Conserver les snapshots 7 jours
+
+# NFS
+nfs_server: "nfs-server.touring.be"
+nfs_mount_point: "/mnt/nfs-backup"
+nfs_export_path: "/backup/oracle-updates"
+nfs_mount_options: "rw,hard,intr,noatime"
+
+# Teams
+teams_webhook_url: "https://outlook.office.com/webhook/XXXXXXXXX@XXXXXXXXX/IncomingWebhook/XXXXXXXXX/XXXXXXXXX"
+teams_title: "Mise à jour Oracle Linux - {{ ansible_hostname }}"
+teams_color: "0078D4"
+
+# Zabbix
+zabbix_server: "zabbix.touring.be"
+zabbix_hostgroup: "Oracle Linux Servers"
+zabbix_template: "Template OS Linux"
+zabbix_agent_port: 10050
+zabbix_agent_config: "/etc/zabbix/zabbix_agentd.conf"
+
+# Grafana
+grafana_url: "https://grafana.touring.be"
+grafana_api_key: "your-grafana-api-key-here"
+grafana_dashboard_name: "Oracle Linux Updates Status"
+grafana_folder: "System Updates"
+
+# Mail (optionnel)
+mail_to: "ITSU@touring.be"
+mail_from: "ansible@{{ ansible_hostname }}"
+mail_subject: "Mise à jour Oracle Linux - {{ ansible_hostname }}"
+mail_server: "localhost"
+mail_port: 25
+mail_use_tls: no
