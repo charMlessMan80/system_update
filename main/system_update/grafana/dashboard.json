@@ -1,0 +1,106 @@
+{
+  "datasource": {
+    "type": "alexanderzobnin-zabbix-datasource",
+    "uid": "zabbix-prod"
+  },
+  "fieldConfig": {
+    "defaults": {
+      "color": {
+        "mode": "thresholds"
+      },
+      "mappings": [],
+      "thresholds": {
+        "mode": "absolute",
+        "steps": [
+          {
+            "color": "green",
+            "value": null
+          },
+          {
+            "color": "orange",
+            "value": 3
+          },
+          {
+            "color": "red",
+            "value": 7
+          }
+        ]
+      }
+    },
+    "overrides": []
+  },
+  "gridPos": {
+    "h": 8,
+    "w": 24,
+    "x": 0,
+    "y": 40
+  },
+  "id": 7,
+  "options": {
+    "colorMode": "value",
+    "graphMode": "area",
+    "justifyMode": "auto",
+    "orientation": "horizontal",
+    "reduceOptions": {
+      "calcs": [
+        "lastNotNull"
+      ],
+      "fields": "",
+      "values": false
+    },
+    "textMode": "auto"
+  },
+  "pluginVersion": "1.1.0",
+  "targets": [
+    {
+      "application": "",
+      "group": "Oracle Linux Servers",
+      "host": "",
+      "item": "oracle.lvm.snapshot.age",
+      "metric": "oracle.lvm.snapshot.age",
+      "refId": "A",
+      "timeShift": "7d"
+    }
+  ],
+  "title": "Snapshots LVM (âge en jours)",
+  "type": "stat"
+}
+
+{
+  "datasource": {
+    "type": "grafana",
+    "uid": "grafana"
+  },
+  "fieldConfig": {
+    "defaults": {
+      "color": {
+        "mode": "thresholds"
+      },
+      "mappings": [],
+      "thresholds": {
+        "mode": "absolute",
+        "steps": [
+          {
+            "color": "green",
+            "value": null
+          }
+        ]
+      }
+    },
+    "overrides": []
+  },
+  "gridPos": {
+    "h": 8,
+    "w": 24,
+    "x": 0,
+    "y": 48
+  },
+  "id": 8,
+  "options": {
+    "content": "### 📁 Derniers rapports de mise à jour\n\n- [Server01](file://nfs-server.touring.be/backup/oracle-updates/server01.touring.be/2025-12-09/update_report_20251209T104001.txt)\n- [Server02](file://nfs-server.touring.be/backup/oracle-updates/server02.touring.be/2025-12-09/update_report_20251209T104001.txt)\n- [DB-PROD-01](file://nfs-server.touring.be/backup/oracle-updates/db-prod-01.touring.be/2025-12-09/update_report_20251209T104001.txt)\n- [APP-PROD-01](file://nfs-server.touring.be/backup/oracle-updates/app-prod-01.touring.be/2025-12-09/update_report_20251209T104001.txt)",
+    "mode": "html"
+  },
+  "pluginVersion": "1.1.0",
+  "title": "Rapports NFS (liens directs)",
+  "type": "text"
+}

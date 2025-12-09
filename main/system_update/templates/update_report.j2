@@ -1,0 +1,18 @@
+Rapport de mise à jour Oracle Linux
+=================================
+Hôte : {{ hostname }}
+Date : {{ date }}
+Version : {{ ansible_distribution }} {{ ansible_distribution_version }}
+-----------------------------
+Paquets avant mise à jour : {{ packages_before }}
+Paquets après mise à jour : {{ packages_after }}
+Mise à jour effectuée : {{ packages_updated }}
+Redémarrage requis : {{ reboot_required }}
+Paquets exclus : {{ excluded_packages | join(', ') }}
+Snapshot LVM : {{ lvm_snapshot }}
+-----------------------------
+Fichiers sauvegardés :
+- Liste des paquets avant : packages_before_update.txt
+- Liste des paquets après : packages_after_update.txt
+- Configuration des dépôts : repos.d/
+- Rapport complet : update_report.txt

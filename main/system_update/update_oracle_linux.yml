@@ -1,42 +1,438 @@
 ---
-- name: Mise à jour Oracle Linux 7
-  hosts: ol7
-  become: true
+- name: Mise à jour Oracle Linux 7/8/9 avec gestion complète des snapshots LVM, Zabbix, Grafana et notification
+  hosts: all
+  become: yes
+  vars:
+    reboot_required: no
+    nfs_mount_path: "{{ nfs_mount_point }}/{{ ansible_hostname }}/{{ ansible_date_time.date }}"
+    zabbix_host_name: "{{ ansible_hostname }}"
+    zabbix_update_status_key: "oracle.update.status"
+    zabbix_update_error_key: "oracle.update.error"
+    snapshot_name: "{{ snapshot_prefix }}{{ ansible_date_time.iso8601_basic_short }}"
+    snapshot_list: []
+
   tasks:
-    - name: Mise à jour des paquets OL7 avec exclusions
-      yum:
+    - name: Déterminer la version d'Oracle Linux
+      ansible.builtin.setup:
+        gather_subset: "!all"
+        filter: ansible_distribution_version
+
+    - name: Définir les variables spécifiques à la version
+      set_fact:
+        yum_module: "yum"
+        reboot_command: "needs-reboot -r 2>/dev/null | grep -q 'Reboot required' && echo 'yes' || echo 'no'"
+        needs_reboot_pkg: "needs-reboot"
+      when: ansible_distribution_version is version("8", ">=")
+
+    - name: Définir pour Oracle Linux 9
+      set_fact:
+        yum_module: "dnf"
+        reboot_command: "needs-reboot -r 2>/dev/null | grep -q 'Reboot required' && echo 'yes' || echo 'no'"
+        needs_reboot_pkg: "needs-reboot"
+      when: ansible_distribution_version is version("9", ">=")
+
+    - name: Installer needs-reboot si absent
+      package:
+        name: "{{ needs_reboot_pkg }}"
+        state: present
+      register: needs_reboot_install
+      when: ansible_distribution_version is version("7", ">=")
+
+    - name: Créer le répertoire de sauvegarde local
+      file:
+        path: "{{ backup_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Sauvegarder la liste des paquets avant mise à jour
+      command: rpm -qa --qf '%{NAME}-%{VERSION}-%{RELEASE}.%{ARCH}\n'
+      register: installed_packages_before
+      changed_when: false
+
+    - name: Sauvegarder la liste des paquets
+      copy:
+        content: "{{ installed_packages_before.stdout }}"
+        dest: "{{ backup_dir }}/packages_before_update.txt"
+        mode: '0644'
+
+    - name: Sauvegarder /etc/yum.repos.d/ (ou /etc/dnf/repos.d/)
+      copy:
+        src: "{{ '/etc/yum.repos.d/' if yum_module == 'yum' else '/etc/dnf/repos.d/' }}"
+        dest: "{{ backup_dir }}/repos.d/"
+        remote_src: yes
+        directory_mode: '0755'
+        mode: '0644'
+
+    - name: Créer le snapshot LVM
+      lvol:
+        vg: "{{ lvm_vg }}"
+        lv: "{{ lvm_lv }}"
+        size: "{{ lvm_snapshot_size }}"
+        snapshot: "{{ snapshot_name }}"
+        state: present
+      register: lvm_snapshot
+      failed_when: lvm_snapshot.failed
+
+    - name: Afficher le snapshot LVM créé
+      debug:
+        msg: "Snapshot LVM créé : {{ snapshot_name }} (VG: {{ lvm_vg }}, LV: {{ lvm_lv }})"
+
+    - name: Monter le partage NFS
+      mount:
+        path: "{{ nfs_mount_point }}"
+        src: "{{ nfs_server }}:{{ nfs_export_path }}"
+        fstype: nfs
+        opts: "{{ nfs_mount_options }}"
+        state: mounted
+      register: nfs_mount_result
+
+    - name: Créer le répertoire de sauvegarde NFS
+      file:
+        path: "{{ nfs_mount_path }}"
+        state: directory
+        mode: '0755'
+      when: nfs_mount_result.mounted
+
+    - name: Mettre à jour le cache des dépôts
+      {{ yum_module }}:
+        update_cache: yes
+
+    - name: Mettre à jour les paquets (exclure ceux définis)
+      {{ yum_module }}:
         name: "*"
         state: latest
-        exclude: "{{ excluded_packages | join(',') }}"
-      notify: reboot
+        update_cache: yes
+        exclude: "{{ excluded_packages | join(' ') }}"
+      register: yum_update_result
+      failed_when: yum_update_result.failed
 
-- name: Mise à jour Oracle Linux 8
-  hosts: ol8
-  become: true
-  tasks:
-    - name: Mise à jour des paquets OL8 avec exclusions
-      dnf:
+    - name: Vérifier si un redémarrage est requis
+      shell: "{{ reboot_command }}"
+      register: reboot_check
+      changed_when: false
+
+    - name: Stocker le résultat du redémarrage requis
+      set_fact:
+        reboot_required: "{{ reboot_check.stdout == 'yes' }}"
+
+    - name: Redémarrer le système si nécessaire
+      reboot:
+        reboot_timeout: 300
+        pre_reboot_delay: 10
+      when: reboot_required
+
+    - name: Nettoyer le cache
+      {{ yum_module }}:
         name: "*"
         state: latest
-        exclude: "{{ excluded_packages | join(',') }}"
-      notify: reboot
+        update_cache: yes
+        clean: yes
 
-- name: Mise à jour Oracle Linux 9
-  hosts: ol9
-  become: true
-  tasks:
-    - name: Mise à jour des paquets OL9 avec exclusions
-      dnf:
-        name: "*"
-        state: latest
-        exclude: "{{ excluded_packages | join(',') }}"
-      notify: reboot
+    - name: Sauvegarder la liste des paquets après mise à jour
+      command: rpm -qa --qf '%{NAME}-%{VERSION}-%{RELEASE}.%{ARCH}\n'
+      register: installed_packages_after
+      changed_when: false
 
-handlers:
-  - name: reboot
-    reboot:
-      msg: "Redémarrage après mise à jour"
-      connect_timeout: 5
-      reboot_timeout: 600
-      pre_reboot_delay: 0
-      post_reboot_delay: 30
+    - name: Sauvegarder la liste des paquets après mise à jour
+      copy:
+        content: "{{ installed_packages_after.stdout }}"
+        dest: "{{ backup_dir }}/packages_after_update.txt"
+        mode: '0644'
+
+    - name: Générer un rapport de mise à jour
+      template:
+        src: update_report.j2
+        dest: "{{ backup_dir }}/update_report.txt"
+        mode: '0644'
+      vars:
+        hostname: "{{ ansible_hostname }}"
+        date: "{{ ansible_date_time.iso8601 }}"
+        packages_updated: "{{ yum_update_result.changed }}"
+        reboot_required: "{{ reboot_required }}"
+        packages_before: "{{ installed_packages_before.stdout_lines | length }}"
+        packages_after: "{{ installed_packages_after.stdout_lines | length }}"
+        excluded_packages: "{{ excluded_packages }}"
+        lvm_snapshot: "{{ snapshot_name }}"
+
+    - name: Copier le rapport sur le serveur NFS
+      copy:
+        src: "{{ backup_dir }}/update_report.txt"
+        dest: "{{ nfs_mount_path }}/update_report_{{ ansible_date_time.iso8601_basic_short }}.txt"
+        remote_src: no
+        mode: '0644'
+      when: nfs_mount_result.mounted
+
+    - name: Copier les logs de sauvegarde sur NFS
+      copy:
+        src: "{{ backup_dir }}/packages_before_update.txt"
+        dest: "{{ nfs_mount_path }}/packages_before_{{ ansible_date_time.iso8601_basic_short }}.txt"
+        remote_src: no
+        mode: '0644'
+      when: nfs_mount_result.mounted
+
+    - name: Copier les logs après mise à jour sur NFS
+      copy:
+        src: "{{ backup_dir }}/packages_after_update.txt"
+        dest: "{{ nfs_mount_path }}/packages_after_{{ ansible_date_time.iso8601_basic_short }}.txt"
+        remote_src: no
+        mode: '0644'
+      when: nfs_mount_result.mounted
+
+    - name: Envoyer un e-mail de notification (optionnel)
+      mail:
+        to: "{{ mail_to }}"
+        from: "{{ mail_from }}"
+        subject: "{{ mail_subject }}"
+        body: |
+          Mise à jour Oracle Linux terminée sur {{ ansible_hostname }}.
+
+          Résumé :
+          - Paquets mis à jour : {{ yum_update_result.changed }}
+          - Redémarrage requis : {{ reboot_required }}
+          - Paquets exclus : {{ excluded_packages | join(', ') }}
+          - Snapshot LVM : {{ snapshot_name }}
+          - Rapport sauvegardé sur NFS : {{ nfs_mount_path }}
+
+          Date : {{ ansible_date_time.iso8601 }}
+        host: "{{ mail_server }}"
+        port: "{{ mail_port }}"
+        username: "{{ mail_username }}"
+        password: "{{ mail_password }}"
+        use_tls: "{{ mail_use_tls }}"
+      register: mail_result
+      when: mail_to is defined and mail_to != ""
+
+    - name: Envoyer une notification Microsoft Teams
+      uri:
+        url: "{{ teams_webhook_url }}"
+        method: POST
+        body: |
+          {
+            "@type": "MessageCard",
+            "@context": "http://schema.org/extensions",
+            "themeColor": "{{ teams_color }}",
+            "title": "{{ teams_title }}",
+            "text": "Mise à jour Oracle Linux terminée sur {{ ansible_hostname }}.\n\n- Paquets mis à jour : {{ yum_update_result.changed }}\n- Redémarrage requis : {{ reboot_required }}\n- Snapshot LVM : {{ snapshot_name }}\n- Rapport sauvegardé sur NFS : {{ nfs_mount_path }}\n\nDate : {{ ansible_date_time.iso8601 }}",
+            "potentialAction": [
+              {
+                "@type": "OpenUri",
+                "name": "Voir le rapport",
+                "targets": [
+                  {
+                    "os": "default",
+                    "uri": "file://{{ nfs_mount_path }}/update_report_{{ ansible_date_time.iso8601_basic_short }}.txt"
+                  }
+                ]
+              }
+            ]
+          }
+        body_format: json
+        status_code: 200
+      register: teams_result
+      failed_when: teams_result.status != 200
+
+    - name: Envoyer le statut de mise à jour à Zabbix
+      zabbix_host:
+        server_url: "http://{{ zabbix_server }}/zabbix"
+        login_user: "Admin"
+        login_password: "zabbix"
+        host_name: "{{ zabbix_host_name }}"
+        host_groups:
+          - "{{ zabbix_hostgroup }}"
+        templates:
+          - "{{ zabbix_template }}"
+        state: present
+      register: zabbix_host_result
+      ignore_errors: yes
+
+    - name: Envoyer les données de mise à jour à Zabbix via zabbix_sender
+      shell: |
+        echo "{{ zabbix_host_name }} {{ zabbix_update_status_key }} {{ '1' if yum_update_result.changed else '0' }}" | /usr/bin/zabbix_sender -z {{ zabbix_server }} -i -
+      register: zabbix_sender_status
+      ignore_errors: yes
+
+    - name: Envoyer l'erreur Zabbix si mise à jour échouée
+      shell: |
+        echo "{{ zabbix_host_name }} {{ zabbix_update_error_key }} {{ '1' if yum_update_result.failed else '0' }}" | /usr/bin/zabbix_sender -z {{ zabbix_server }} -i -
+      register: zabbix_sender_error
+      ignore_errors: yes
+
+    - name: Afficher un résumé de la mise à jour
+      debug:
+        msg: |
+          Mise à jour terminée sur {{ ansible_hostname }}
+          - Paquets mis à jour : {{ yum_update_result.changed }}
+          - Redémarrage requis : {{ reboot_required }}
+          - Snapshot LVM : {{ snapshot_name }}
+          - Rapport sauvegardé sur NFS : {{ nfs_mount_path }}
+          - Notification Teams : {{ 'envoyée' if teams_result is defined else 'échec' }}
+          - Notification mail : {{ 'envoyée' if mail_result is defined else 'désactivée' }}
+          - Statut Zabbix : {{ 'envoyé' if zabbix_sender_status is defined else 'échec' }}
+
+    - name: Rollback automatique si mise à jour échouée
+      block:
+        - name: Restaurer depuis le snapshot LVM
+          shell: |
+            lvconvert --merge /dev/{{ lvm_vg }}/{{ snapshot_name }}
+            echo "Snapshot {{ snapshot_name }} restauré."
+          register: rollback_result
+          args:
+            executable: /bin/bash
+
+        - name: Redémarrer après rollback
+          reboot:
+            reboot_timeout: 300
+            pre_reboot_delay: 10
+
+        - name: Envoyer une alerte Teams en cas de rollback
+          uri:
+            url: "{{ teams_webhook_url }}"
+            method: POST
+            body: |
+              {
+                "@type": "MessageCard",
+                "@context": "http://schema.org/extensions",
+                "themeColor": "FF0000",
+                "title": "ROLLBACK - Mise à jour Oracle Linux échouée sur {{ ansible_hostname }}",
+                "text": "La mise à jour a échoué. Le système a été restauré depuis le snapshot LVM : {{ snapshot_name }}.\n\nDate : {{ ansible_date_time.iso8601 }}",
+                "potentialAction": [
+                  {
+                    "@type": "OpenUri",
+                    "name": "Voir le rapport d'erreur",
+                    "targets": [
+                      {
+                        "os": "default",
+                        "uri": "file://{{ nfs_mount_path }}/update_report_{{ ansible_date_time.iso8601_basic_short }}.txt"
+                      }
+                    ]
+                  }
+                ]
+              }
+            body_format: json
+            status_code: 200
+          register: teams_rollback_alert
+          failed_when: teams_rollback_alert.status != 200
+
+        - name: Envoyer l'erreur Zabbix
+          shell: |
+            echo "{{ zabbix_host_name }} {{ zabbix_update_error_key }} 1" | /usr/bin/zabbix_sender -z {{ zabbix_server }} -i -
+          register: zabbix_sender_rollback_error
+          ignore_errors: yes
+
+        - name: Nettoyer le snapshot après rollback
+          lvol:
+            vg: "{{ lvm_vg }}"
+            lv: "{{ snapshot_name }}"
+            state: absent
+          register: snapshot_cleanup_rollback
+          ignore_errors: yes
+
+        - name: Journaliser le rollback
+          copy:
+            content: |
+              Rollback effectué sur {{ ansible_hostname }} le {{ ansible_date_time.iso8601 }}
+              Snapshot restauré : {{ snapshot_name }}
+              Statut : {{ 'réussi' if snapshot_cleanup_rollback is not failed else 'échec' }}
+            dest: "{{ backup_dir }}/rollback_log.txt"
+            mode: '0644'
+
+      rescue:
+        - name: Log d'erreur de rollback
+          debug:
+            msg: "Échec du rollback LVM sur {{ ansible_hostname }}. Vérifiez manuellement le snapshot : {{ snapshot_name }}"
+
+    - name: Nettoyer les snapshots obsolètes (si mise à jour réussie)
+      block:
+        - name: Lister tous les snapshots du VG
+          shell: lvs --noheadings -o lv_name,lv_size,lv_attr --select "lv_name=~^{{ snapshot_prefix }}" {{ lvm_vg }}
+          register: lvm_snapshots_list
+          changed_when: false
+
+        - name: Extraire les noms des snapshots
+          set_fact:
+            snapshot_list: "{{ lvm_snapshots_list.stdout_lines | map('split') | map('first') | list }}"
+
+        - name: Nettoyer les snapshots plus anciens que {{ snapshot_retention_days }} jours
+          lvol:
+            vg: "{{ lvm_vg }}"
+            lv: "{{ item }}"
+            state: absent
+          loop: "{{ snapshot_list }}"
+          when: item != snapshot_name and item is defined and item | regex_replace(snapshot_prefix, '') | to_datetime < (ansible_date_time.iso8601 | to_datetime - (snapshot_retention_days * 24 * 3600) | to_datetime)
+          register: snapshot_cleanup_old
+
+        - name: Journaliser le nettoyage des snapshots
+          copy:
+            content: |
+              Nettoyage des snapshots obsolètes sur {{ ansible_hostname }} le {{ ansible_date_time.iso8601 }}
+              Snapshots supprimés : {{ snapshot_cleanup_old.results | selectattr('changed', 'defined') | selectattr('changed', '==', True) | map(attribute='item') | list | join(', ') }}
+            dest: "{{ backup_dir }}/snapshot_cleanup_log.txt"
+            mode: '0644'
+
+      when: yum_update_result.changed or not yum_update_result.failed
+
+    - name: Nettoyer le snapshot actuel (si mise à jour réussie)
+      lvol:
+        vg: "{{ lvm_vg }}"
+        lv: "{{ snapshot_name }}"
+        state: absent
+      register: snapshot_cleanup_current
+      when: not yum_update_result.failed
+
+    - name: Journaliser la suppression du snapshot courant
+      copy:
+        content: |
+          Snapshot {{ snapshot_name }} supprimé sur {{ ansible_hostname }} le {{ ansible_date_time.iso8601 }}
+          Statut : {{ 'réussi' if snapshot_cleanup_current is not failed else 'échec' }}
+        dest: "{{ backup_dir }}/snapshot_cleanup_current_log.txt"
+        mode: '0644'
+      when: not yum_update_result.failed
+
+    - name: Créer ou mettre à jour le dashboard Grafana
+      uri:
+        url: "{{ grafana_url }}/api/dashboards/db"
+        method: POST
+        body: |
+          {
+            "dashboard": {
+              "title": "{{ grafana_dashboard_name }}",
+              "uid": "oracle-updates",
+              "folderUid": "{{ grafana_folder }}",
+              "panels": [
+                {
+                  "type": "stat",
+                  "title": "Mises à jour réussies",
+                  "datasource": "Zabbix",
+                  "targets": [
+                    {
+                      "metric": "{{ zabbix_update_status_key }}",
+                      "host": "{{ zabbix_host_name }}",
+                      "function": "avg",
+                      "timeShift": "1h"
+                    }
+                  ]
+                },
+                {
+                  "type": "stat",
+                  "title": "Erreurs de mise à jour",
+                  "datasource": "Zabbix",
+                  "targets": [
+                    {
+                      "metric": "{{ zabbix_update_error_key }}",
+                      "host": "{{ zabbix_host_name }}",
+                      "function": "avg",
+                      "timeShift": "1h"
+                    }
+                  ]
+                }
+              ]
+            },
+            "folderUid": "{{ grafana_folder }}",
+            "overwrite": true
+          }
+        body_format: json
+        headers:
+          Authorization: "Bearer {{ grafana_api_key }}"
+        status_code: 200
+      register: grafana_dashboard_result
+      ignore_errors: yes
