@@ -1,0 +1,78 @@
+---
+- name: Installer needs-reboot si absent (OL 9)
+  package:
+    name: needs-reboot
+    state: present
+  register: needs_reboot_install
+
+- name: Créer le répertoire de sauvegarde local
+  file:
+    path: "{{ backup_dir }}"
+    state: directory
+    mode: '0755'
+
+- name: Sauvegarder la liste des paquets avant mise à jour
+  command: rpm -qa --qf '%{NAME}-%{VERSION}-%{RELEASE}.%{ARCH}\n'
+  register: installed_packages_before
+  changed_when: false
+
+- name: Sauvegarder la liste des paquets
+  copy:
+    content: "{{ installed_packages_before.stdout }}"
+    dest: "{{ backup_dir }}/packages_before_update.txt"
+    mode: '0644'
+
+- name: Sauvegarder /etc/dnf/repos.d/
+  copy:
+    src: /etc/dnf/repos.d/
+    dest: "{{ backup_dir }}/repos.d/"
+    remote_src: yes
+    directory_mode: '0755'
+    mode: '0644'
+
+- name: Créer le snapshot LVM
+  lvol:
+    vg: "{{ lvm_vg }}"
+    lv: "{{ lvm_lv }}"
+    size: "{{ lvm_snapshot_size }}"
+    snapshot: "{{ snapshot_name }}"
+    state: present
+  register: lvm_snapshot
+  failed_when: lvm_snapshot.failed
+
+- name: Afficher le snapshot LVM créé
+  debug:
+    msg: "Snapshot LVM créé : {{ snapshot_name }} (VG: {{ lvm_vg }}, LV: {{ lvm_lv }})"
+
+- name: Monter le partage NFS
+  mount:
+    path: "{{ nfs_mount_point }}"
+    src: "{{ nfs_server }}:{{ nfs_export_path }}"
+    fstype: nfs
+    opts: "{{ nfs_mount_options }}"
+    state: mounted
+  register: nfs_mount_result
+
+- name: Créer le répertoire de sauvegarde NFS
+  file:
+    path: "{{ nfs_mount_path }}"
+    state: directory
+    mode: '0755'
+  when: nfs_mount_result.mounted
+
+- name: Mettre à jour le cache des dépôts
+  dnf:
+    update_cache: yes
+
+- name: Mettre à jour les paquets (exclure ceux définis)
+  dnf:
+    name: "*"
+    state: latest
+    update_cache: yes
+    exclude: "{{ excluded_packages | join(' ') }}"
+  register: yum_update_result
+  failed_when: yum_update_result.failed
+
+- name: Définir la commande de vérification du redémarrage
+  set_fact:
+    reboot_command: "needs-reboot -r 2>/dev/null | grep -q 'Reboot required' && echo 'yes' || echo 'no'"

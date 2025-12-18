@@ -1,0 +1,26 @@
+---
+- name: Envoyer le statut de mise à jour à Zabbix
+  zabbix_host:
+    server_url: "http://{{ zabbix_server }}/zabbix"
+    login_user: "Admin"
+    login_password: "zabbix"
+    host_name: "{{ zabbix_host_name }}"
+    host_groups:
+      - "{{ zabbix_hostgroup }}"
+    templates:
+      - "{{ zabbix_template }}"
+    state: present
+  register: zabbix_host_result
+  ignore_errors: yes
+
+- name: Envoyer les données de mise à jour à Zabbix via zabbix_sender
+  shell: |
+    echo "{{ zabbix_host_name }} {{ zabbix_update_status_key }} {{ '1' if yum_update_result.changed else '0' }}" | /usr/bin/zabbix_sender -z {{ zabbix_server }} -i -
+  register: zabbix_sender_status
+  ignore_errors: yes
+
+- name: Envoyer l'erreur Zabbix si mise à jour échouée
+  shell: |
+    echo "{{ zabbix_host_name }} {{ zabbix_update_error_key }} {{ '1' if yum_update_result.failed else '0' }}" | /usr/bin/zabbix_sender -z {{ zabbix_server }} -i -
+  register: zabbix_sender_error
+  ignore_errors: yes

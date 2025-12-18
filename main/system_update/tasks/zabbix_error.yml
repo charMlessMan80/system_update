@@ -1,0 +1,6 @@
+---
+- name: Envoyer l'erreur Zabbix
+  shell: |
+    echo "{{ zabbix_host_name }} {{ zabbix_update_error_key }} 1" | /usr/bin/zabbix_sender -z {{ zabbix_server }} -i -
+  register: zabbix_sender_rollback_error
+  ignore_errors: yes

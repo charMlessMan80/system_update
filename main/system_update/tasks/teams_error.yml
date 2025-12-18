@@ -1,0 +1,30 @@
+---
+- name: Envoyer une alerte Teams en cas de rollback
+  uri:
+    url: "{{ teams_webhook_url }}"
+    method: POST
+    body: |
+      {
+        "@type": "MessageCard",
+        "@context": "http://schema.org/extensions",
+        "themeColor": "FF0000",
+        "title": "ROLLBACK - Mise à jour Oracle Linux échouée sur {{ ansible_hostname }}",
+        "text": "La mise à jour a échoué. Le système a été restauré depuis le snapshot LVM : {{ snapshot_name }}.\n\nDate : {{ ansible_date_time.iso8601 }}",
+        "potentialAction": [
+          {
+            "@type": "OpenUri",
+            "name": "Voir le rapport d'erreur",
+            "targets": [
+              {
+                "os": "default",
+                "uri": "file://{{ nfs_mount_path }}/update_report_{{ ansible_date_time.iso8601_basic_short }}.txt"
+              }
+            ]
+          }
+        ]
+      }
+    body_format: json
+    status_code: 200
+  register: teams_rollback_alert
+  failed_when: teams_rollback_alert.status != 200
+

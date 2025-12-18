@@ -1,0 +1,17 @@
+---
+- name: Créer ou mettre à jour le dashboard Grafana
+  uri:
+    url: "{{ grafana_url }}/api/dashboards/db"
+    method: POST
+    body: |
+      {
+        "dashboard": {{ dashboard_json | to_json }},
+        "folderUid": "{{ grafana_folder }}",
+        "overwrite": true
+      }
+    body_format: json
+    headers:
+      Authorization: "Bearer {{ grafana_api_key }}"
+    status_code: 200
+  register: grafana_dashboard_result
+  ignore_errors: yes

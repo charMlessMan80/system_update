@@ -1,0 +1,24 @@
+---
+- name: Envoyer un e-mail de notification
+  mail:
+    to: "{{ mail_to }}"
+    from: "{{ mail_from }}"
+    subject: "{{ mail_subject }}"
+    body: |
+      Mise à jour Oracle Linux terminée sur {{ ansible_hostname }}.
+
+      Résumé :
+      - Paquets mis à jour : {{ yum_update_result.changed }}
+      - Redémarrage requis : {{ reboot_required }}
+      - Paquets exclus : {{ excluded_packages | join(', ') }}
+      - Snapshot LVM : {{ snapshot_name }}
+      - Rapport sauvegardé sur NFS : {{ nfs_mount_path }}
+
+      Date : {{ ansible_date_time.iso8601 }}
+    host: "{{ mail_server }}"
+    port: "{{ mail_port }}"
+    username: "{{ mail_username }}"
+    password: "{{ mail_password }}"
+    use_tls: "{{ mail_use_tls }}"
+  register: mail_result
+  when: mail_to is defined and mail_to != ""

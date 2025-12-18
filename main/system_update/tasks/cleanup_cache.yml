@@ -1,0 +1,10 @@
+---
+- name: Nettoyer le cache
+  shell: |
+    if command -v yum >/dev/null 2>&1; then
+      yum clean all
+    elif command -v dnf >/dev/null 2>&1; then
+      dnf clean all
+    fi
+  args:
+    executable: /bin/bash
