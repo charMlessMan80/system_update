@@ -15,18 +15,28 @@
         gather_subset: "!all"
         filter: ansible_distribution_version
 
-    - name: Définir la version OL
+    - name: Vérifier que le système est bien Oracle Linux Server
+      assert:
+        that:
+          - ansible_distribution == "OracleLinux"
+        fail_msg: "Ce système n'est pas Oracle Linux Server. Actuel : {{ ansible_distribution }} {{ ansible_distribution_version }}. Seules les versions Oracle Linux 7, 8, 9 sont prises en charge."
+
+    - name: Extraire la version majeure
       set_fact:
-        ol_version: "{{ ansible_distribution_version | regex_replace('\\..*', '') | int }}"
+        ol_version: "{{ ansible_distribution_version.split('.')[0] | int }}"
+
+    - name: Afficher les faits du système
+      debug:
+        msg: "Distribution: {{ ansible_distribution }} | Version: {{ ansible_distribution_version }} | Version majeure: {{ ansible_distribution_version.split('.')[0] | int }} | ol_version: {{ ol_version }}"
 
     - name: Inclure les tâches spécifiques à la version
       include_tasks: "tasks/ol{{ ol_version }}.yml"
-      when: ol_version in [7, 8, 9]
+      when: ol_version == '7' or ol_version == '8' or ol_version == '9'
 
     - name: Si version non supportée, échouer
       fail:
-        msg: "Oracle Linux {{ ansible_distribution_version }} non supportée. Seules les versions 7, 8 et 9 sont prises en charge."
-      when: ol_version not in [7, 8, 9]
+        msg: "Version Oracle Linux {{ ansible_distribution_version }} non supportée. Seules les versions 7, 8 et 9 sont prises en charge."
+      when: ol_version == '7' or ol_version == '8' or ol_version == '9'
 
     # --- Tâches communes après la mise à jour ---
     - name: Vérifier si un redémarrage est requis

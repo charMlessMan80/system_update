@@ -15,7 +15,7 @@ snapshot_retention_days: 7
 # NFS
 nfs_server: "pr1-prd-mysqlc01-l01"
 nfs_mount_point: "/mnt/nfs-backup"
-nfs_export_path: "/backup/oracle-updates"
+nfs_export_path: "/data/nfs-backup/oracle-updates"
 nfs_mount_options: "rw,hard,intr,noatime"
 
 # Teams (activé si true)

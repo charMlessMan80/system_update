@@ -1,9 +1,9 @@
 ---
 - name: Installer needs-reboot si absent (OL 7)
   package:
-    name: needs-reboot
+    name: yum-utils
     state: present
-  register: needs_reboot_install
+  register: yum_utils_install
 
 - name: Créer le répertoire de sauvegarde local
   file:
@@ -58,7 +58,7 @@
     path: "{{ nfs_mount_path }}"
     state: directory
     mode: '0755'
-  when: nfs_mount_result.mounted
+  when: nfs_mount_result.changed
 
 - name: Mettre à jour le cache des dépôts
   yum:
@@ -75,4 +75,4 @@
 
 - name: Définir la commande de vérification du redémarrage
   set_fact:
-    reboot_command: "needs-reboot -r 2>/dev/null | grep -q 'Reboot required' && echo 'yes' || echo 'no'"
+    reboot_command: "needs-restarting -r 2>/dev/null | grep -q 'Reboot required' && echo 'yes' || echo 'no'"
